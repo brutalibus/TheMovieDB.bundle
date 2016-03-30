@@ -2,28 +2,26 @@
 # Multi-language support added by Aqntbghd
 # 3.0 API update by ToMM
 
-import countrycode
-
 # apiary.io debugging URL
 # BASE_URL = 'http://private-ad99a-themoviedb.apiary.io/3'
+API_URL = 'http://www.omdbapi.com/?i=%s&tomatoes=true'
 
-BASE_URL = 'https://api.tmdb.org/3' # TODO Possibly put this behind cloudflare?
-API_KEY = 'a3dc111e66105f6387e99393813ae4d5'
-TMDB_CONFIG = '%s/configuration?api_key=%s' % (BASE_URL, API_KEY)
+TMDB_BASE_URL = 'http://127.0.0.1:32400/services/tmdb?uri=%s'
+TMDB_CONFIG = '/configuration'
 
 # Movies
-TMDB_MOVIE_SEARCH = '%s/search/movie?api_key=%s&query=%%s&year=%%s&language=%%s&include_adult=%%s' % (BASE_URL, API_KEY)
-TMDB_MOVIE = '%s/movie/%%s?api_key=%s&append_to_response=releases,credits&language=%%s' % (BASE_URL, API_KEY)
-TMDB_MOVIE_IMAGES = '%s/movie/%%s/images?api_key=%s' % (BASE_URL, API_KEY)
+TMDB_MOVIE_SEARCH = '/search/movie?query=%s&year=%s&language=%s&include_adult=%s'
+TMDB_MOVIE = '/movie/%s?append_to_response=releases,credits&language=%s'
+TMDB_MOVIE_IMAGES = '/movie/%s/images'
 
 # TV
-TMDB_TV_SEARCH = '%s/search/tv?api_key=%s&query=%%s&year=%%s&language=%%s&include_adult=%%s' % (BASE_URL, API_KEY)
-TMDB_TV = '%s/tv/%%s?api_key=%s&append_to_response=credits&language=%%s' % (BASE_URL, API_KEY)
-TMDB_TV_SEASON = '%s/tv/%%s/season/%%s?api_key=%s&language=%%s' % (BASE_URL, API_KEY)
-TMDB_TV_EPISODE = '%s/tv/%%s/season/%%s/episode/%%s?api_key=%s&append_to_response=credits,images&language=%%s' % (BASE_URL, API_KEY)
-TMDB_TV_IMAGES = '%s/tv/%%s/images?api_key=%s' % (BASE_URL, API_KEY)
-TMDB_TV_EXTERNAL_IDS = '%s/tv/%%s/external_ids?api_key=%s' % (BASE_URL, API_KEY)
-TMDB_TV_TVDB = '%s/tv/find/%%s?api_key=%s&external_source=tvdb_id' % (BASE_URL, API_KEY)
+TMDB_TV_SEARCH = '/search/tv?query=%s&year=%s&language=%s&include_adult=%s'
+TMDB_TV = '/tv/%s?append_to_response=credits&language=%s'
+TMDB_TV_SEASON = '/tv/%s/season/%s?language=%s'
+TMDB_TV_EPISODE = '/tv/%s/season/%s/episode/%s?&append_to_response=credits,images&language=%s'
+TMDB_TV_IMAGES = '/tv/%s/images'
+TMDB_TV_EXTERNAL_IDS = '/tv/%s/external_ids'
+TMDB_TV_TVDB = '/tv/find/%s?external_source=tvdb_id'
 
 ARTWORK_ITEM_LIMIT = 15
 POSTER_SCORE_RATIO = .3 # How much weight to give ratings vs. vote counts when picking best posters. 0 means use only ratings.
@@ -54,7 +52,7 @@ def Start():
 @expose
 def GetImdbId(tmdb_id, lang='en'):
 
-  tmdb_dict = GetJSON(url=TMDB_MOVIE % (tmdb_id, lang))
+  tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE % (tmdb_id, lang))
 
   if isinstance(tmdb_dict, dict) and 'imdb_id' in tmdb_dict and RE_IMDB_ID.search(tmdb_dict['imdb_id']):
     return tmdb_dict['imdb_id']
@@ -65,7 +63,7 @@ def GetImdbId(tmdb_id, lang='en'):
 @expose
 def GetTvdbId(tmdb_id):
 
-  tmdb_dict = GetJSON(url=TMDB_TV_EXTERNAL_IDS % tmdb_id)
+  tmdb_dict = GetTMDBJSON(url=TMDB_TV_EXTERNAL_IDS % tmdb_id)
 
   if isinstance(tmdb_dict, dict) and 'tvdb_id' in tmdb_dict and tmdb_dict['tvdb_id']:
     return str(tmdb_dict['tvdb_id'])
@@ -76,7 +74,7 @@ def GetTvdbId(tmdb_id):
 @expose
 def GetTvRageId(tmdb_id):
 
-  tmdb_dict = GetJSON(url=TMDB_TV_EXTERNAL_IDS % tmdb_id)
+  tmdb_dict = GetTMDBJSON(url=TMDB_TV_EXTERNAL_IDS % tmdb_id)
 
   if isinstance(tmdb_dict, dict) and 'tvrage_id' in tmdb_dict and tmdb_dict['tvrage_id']:
     return str(tmdb_dict['tvrage_id'])
@@ -100,12 +98,12 @@ def GetTMDbMetadata(id, lang):
   return PerformTMDbMovieUpdate(id, lang)
 
 ####################################################################################################
-def GetJSON(url, cache_time=CACHE_1MONTH):
+def GetTMDBJSON(url, cache_time=CACHE_1MONTH):
 
   tmdb_dict = None
 
   try:
-    tmdb_dict = JSON.ObjectFromURL(url, sleep=2.0, headers={'Accept': 'application/json'}, cacheTime=cache_time)
+    tmdb_dict = JSON.ObjectFromURL(TMDB_BASE_URL % String.Quote(url, True), sleep=2.0, headers={'Accept': 'application/json'}, cacheTime=cache_time)
   except:
     Log('Error fetching JSON from The Movie Database.')
 
@@ -185,7 +183,7 @@ def DictToMovieMetadataObj(metadata_dict, metadata):
       if 'actor' in role:
         meta_role.actor = role['actor']
 
-      if 'profile_path' in role:
+      if 'photo' in role:
         meta_role.photo = role['photo']
 
 ####################################################################################################
@@ -199,7 +197,7 @@ def PerformTMDbMovieSearch(results, media, lang, manual, get_imdb_id=False):
   else:
     # If this a manual search (Fix Incorrect Match) and we get an IMDb id as input.
     if manual and RE_IMDB_ID.search(media.name):
-      tmdb_dict = GetJSON(url=TMDB_MOVIE % (media.name, lang))
+      tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE % (media.name, lang))
 
       if isinstance(tmdb_dict, dict) and 'id' in tmdb_dict:
 
@@ -235,10 +233,10 @@ def PerformTMDbMovieSearch(results, media, lang, manual, get_imdb_id=False):
       # try the search again with the original.
       #
       stripped_name = String.StripDiacritics(media.name)
-      tmdb_dict = GetJSON(url=TMDB_MOVIE_SEARCH % (String.Quote(stripped_name), year, lang, include_adult))
+      tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE_SEARCH % (String.Quote(stripped_name, True), year, lang, include_adult))
       if media.name != stripped_name and (tmdb_dict == None or len(tmdb_dict['results']) == 0):
         Log('No results for title modified by strip diacritics, searching again with the original: ' + media.name)
-        tmdb_dict = GetJSON(url=TMDB_MOVIE_SEARCH % (String.Quote(media.name), year, lang, include_adult))
+        tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE_SEARCH % (String.Quote(media.name, True), year, lang, include_adult))
 
       if isinstance(tmdb_dict, dict) and 'results' in tmdb_dict:
 
@@ -286,27 +284,47 @@ def PerformTMDbMovieUpdate(metadata_id, lang):
 
   metadata = dict(id=metadata_id)
 
-  config_dict = GetJSON(url=TMDB_CONFIG, cache_time=CACHE_1WEEK * 2)
-  tmdb_dict = GetJSON(url=TMDB_MOVIE % (metadata_id, lang))
+  config_dict = GetTMDBJSON(url=TMDB_CONFIG, cache_time=CACHE_1WEEK * 2)
+  tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE % (metadata_id, lang))
+  imdbId = GetImdbId(tmdb_dict['id'], lang)
+  urlAPI = API_URL % (imdbId)
+
+  # Rating.
+  
+  ratingFound = None
+  try:
+      movie = JSON.ObjectFromURL(urlAPI, sleep=5.0)
+      if 'Response' in movie and movie['Response'] == 'True':
+          rating_imdb = None
+          rating_rt = None
+          if 'imdbRating' in movie and movie['imdbRating'] != 'N/A':
+              rating_imdb = movie['imdbRating']
+              metadata['rating'] = float(rating_imdb)
+              ratingFound = True
+  except:
+      Log('*** Failed when trying to open url: %s ***' % (url))
 
   if not isinstance(tmdb_dict, dict) or 'overview' not in tmdb_dict or tmdb_dict['overview'] is None or tmdb_dict['overview'] == "":
     # Retry the query with no language specified if we didn't get anything from the initial request.
-    tmdb_dict = GetJSON(url=TMDB_MOVIE % (metadata_id, ''))
+    tmdb_dict = GetTMDBJSON(url=TMDB_MOVIE % (metadata_id, ''))
 
   # This additional request is necessary since full art/poster lists are not returned if they don't exactly match the language
-  tmdb_images_dict = GetJSON(url=TMDB_MOVIE_IMAGES % metadata_id)
+  tmdb_images_dict = GetTMDBJSON(url=TMDB_MOVIE_IMAGES % metadata_id)
 
   if not isinstance(tmdb_dict, dict) or not isinstance(tmdb_images_dict, dict):
     return None
 
+
   # Rating.
-  votes = tmdb_dict['vote_count']
-  rating = tmdb_dict['vote_average']
-  if votes > 3:
-    metadata['rating'] = rating
-    metadata['audience_rating'] = 0.0
-    metadata['rating_image'] = None
-    metadata['audience_rating_image'] = None
+  if not ratingFound :
+      votes = tmdb_dict['vote_count']
+      rating = tmdb_dict['vote_average']
+      if votes > 3:
+        metadata['rating'] = rating
+        metadata['audience_rating'] = 0.0
+        metadata['rating_image'] = None
+        metadata['audience_rating_image'] = None
+  
 
   # Title of the film.
   metadata['title'] = tmdb_dict['title']
@@ -328,14 +346,14 @@ def PerformTMDbMovieUpdate(metadata_id, lang):
     c = Prefs['country']
 
     for country in tmdb_dict['releases']['countries']:
-      if country['iso_3166_1'] == countrycode.COUNTRY_TO_CODE[c]:
+      if country['iso_3166_1'] == Locale.CountryCodes.MatchToCode(c):
 
         # Content rating.
         if 'certification' in country and country['certification'] != '':
-          if countrycode.COUNTRY_TO_CODE[c] == 'US':
+          if Locale.CountryCodes.MatchToCode(c) == 'US':
             metadata['content_rating'] = country['certification']
           else:
-            metadata['content_rating'] = '%s/%s' % (countrycode.COUNTRY_TO_CODE[c].lower(), country['certification'])
+            metadata['content_rating'] = '%s/%s' % (Locale.CountryCodes.MatchToCode(c).lower(), country['certification'])
 
         # Release date (country specific).
         if 'release_date' in country and country['release_date'] != '':
@@ -509,6 +527,10 @@ class TMDbAgent(Agent.Movies):
 
     metadata_dict = PerformTMDbMovieUpdate(metadata.id, lang)
 
+    if metadata_dict is None:
+      Log('TMDb was unable to get any metadata for %s (lang = %s)' % (metadata.id, lang))
+      return
+
     DictToMovieMetadataObj(metadata_dict, metadata)
 
 ####################################################################################################
@@ -524,7 +546,7 @@ class TMDbAgent(Agent.TV_Shows):
 
     # If TMDB is used as a secondary agent for TVDB, find the TMDB id
     if media.primary_agent == 'com.plexapp.agents.thetvdb':
-      tmdb_dict = GetJSON(url=TMDB_TV_TVDB % (media.primary_metadata.id))
+      tmdb_dict = GetTMDBJSON(url=TMDB_TV_TVDB % (media.primary_metadata.id))
 
       if isinstance(tmdb_dict, dict) and 'tv_results' in tmdb_dict and len(tmdb_dict['tv_results']) > 0:
         tmdb_id = tmdb_dict['tv_results'][0]['id']
@@ -557,11 +579,11 @@ class TMDbAgent(Agent.TV_Shows):
     # try the search again with the original.
     #
     stripped_name = String.StripDiacritics(media_show)
-    tmdb_dict = GetJSON(url=TMDB_TV_SEARCH % (String.Quote(stripped_name), year, lang, include_adult))
+    tmdb_dict = GetTMDBJSON(url=TMDB_TV_SEARCH % (String.Quote(stripped_name, True), year, lang, include_adult))
 
     if media_show != stripped_name and (tmdb_dict == None or len(tmdb_dict['results']) == 0):
       Log('No results for title modified by strip diacritics, searching again with the original: ' + media_show)
-      tmdb_dict = GetJSON(url=TMDB_TV_SEARCH % (String.Quote(media_show), year, lang, include_adult))
+      tmdb_dict = GetTMDBJSON(url=TMDB_TV_SEARCH % (String.Quote(media_show, True), year, lang, include_adult))
 
     if isinstance(tmdb_dict, dict) and 'results' in tmdb_dict:
       for i, show in enumerate(sorted(tmdb_dict['results'], key=lambda k: k['popularity'], reverse=True)):
@@ -599,25 +621,39 @@ class TMDbAgent(Agent.TV_Shows):
 
   def update(self, metadata, media, lang):
 
-    config_dict = GetJSON(url=TMDB_CONFIG, cache_time=CACHE_1WEEK * 2)
-    tmdb_dict = GetJSON(url=TMDB_TV % (metadata.id, lang))
+    config_dict = GetTMDBJSON(url=TMDB_CONFIG, cache_time=CACHE_1WEEK * 2)
+    tmdb_dict = GetTMDBJSON(url=TMDB_TV % (metadata.id, lang))
 
     if not isinstance(tmdb_dict, dict) or 'overview' not in tmdb_dict or tmdb_dict['overview'] is None or tmdb_dict['overview'] == "":
       # Retry the query with no language specified if we didn't get anything from the initial request.
-      tmdb_dict = GetJSON(url=TMDB_TV % (metadata.id, ''))
+      tmdb_dict = GetTMDBJSON(url=TMDB_TV % (metadata.id, ''))
 
     # This additional request is necessary since full art/poster lists are not returned if they don't exactly match the language
-    tmdb_images_dict = GetJSON(url=TMDB_TV_IMAGES % metadata.id)
+    tmdb_images_dict = GetTMDBJSON(url=TMDB_TV_IMAGES % metadata.id)
 
     if not isinstance(tmdb_dict, dict) or not isinstance(tmdb_images_dict, dict):
       return None
 
     # Rating.
-    votes = tmdb_dict['vote_count']
-    rating = tmdb_dict['vote_average']
-    if votes > 3:
-      metadata.rating = rating
-      metadata.audience_rating = 0.0
+    urlAPI = API_URL % (metadata.id)
+
+    try:
+      movie = JSON.ObjectFromURL(urlAPI, sleep=5.0)
+      if 'Response' in movie and movie['Response'] == 'True':
+        rating_imdb = None
+        rating_rt = None
+        if 'imdbRating' in movie and movie['imdbRating'] != 'N/A':
+          rating_imdb = movie['imdbRating']
+          metadata.rating = float(rating_imdb)
+    except:
+      Log('*** Failed when trying to open url: %s ***' % (url))
+      votes = tmdb_dict['vote_count']
+      rating = tmdb_dict['vote_average']
+      if votes > 3:
+        metadata.rating = rating
+        metadata.audience_rating = 0.0
+
+
 
     # Name of the show.
     metadata.title = tmdb_dict['name']
@@ -661,8 +697,8 @@ class TMDbAgent(Agent.TV_Shows):
     metadata.countries.clear()
     if 'origin_country' in tmdb_dict:
       for country in tmdb_dict['origin_country']:
-        if len(country) == 2 and country in countrycode.CODE_TO_COUNTRY:
-          country = countrycode.CODE_TO_COUNTRY[country]
+        if len(country) == 2 and Locale.CountryCodes.MatchToCountry(country):
+          country = Locale.CountryCodes.MatchToCountry(country)
         else:
           continue
 
@@ -771,7 +807,7 @@ class TMDbAgent(Agent.TV_Shows):
         @task
         def UpdateSeason(season=season, s=s):
 
-          tmdb_season_dict = GetJSON(url=TMDB_TV_SEASON % (metadata.id, s, lang))
+          tmdb_season_dict = GetTMDBJSON(url=TMDB_TV_SEASON % (metadata.id, s, lang))
 
           if tmdb_season_dict is None:
             return None
@@ -802,7 +838,7 @@ class TMDbAgent(Agent.TV_Shows):
           @task
           def UpdateEpisode(episode=episode, s=s, e=e):
 
-            tmdb_episode_dict = GetJSON(url=TMDB_TV_EPISODE % (metadata.id, s, e, lang))
+            tmdb_episode_dict = GetTMDBJSON(url=TMDB_TV_EPISODE % (metadata.id, s, e, lang))
 
             if not isinstance(tmdb_episode_dict, dict):
               return None
